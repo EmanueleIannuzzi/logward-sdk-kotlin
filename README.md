@@ -1,0 +1,336 @@
+# LogWard Kotlin SDK
+
+Official Kotlin SDK for LogWard with advanced features: automatic batching, retry logic, circuit breaker, query API, live streaming, and middleware support.
+
+## Features
+
+- ✅ **Automatic batching** with configurable size and interval
+- ✅ **Retry logic** with exponential backoff
+- ✅ **Circuit breaker** pattern for fault tolerance
+- ✅ **Max buffer size** with drop policy to prevent memory leaks
+- ✅ **Query API** for searching and filtering logs
+- ✅ **Live tail** with Server-Sent Events (SSE)
+- ✅ **Trace ID context** for distributed tracing
+- ✅ **Global metadata** added to all logs
+- ✅ **Structured error serialization**
+- ✅ **Internal metrics** (logs sent, errors, latency, etc.)
+- ✅ **Spring Boot, Ktor middleware** for auto-logging HTTP requests
+- ✅ **Full Kotlin coroutines support** with suspend functions
+
+## Requirements
+
+- JVM 11 or higher
+- Kotlin 1.9+ (or Java 11+ for Java interop)
+- Gradle or Maven
+
+## Installation
+
+### Gradle (Kotlin DSL)
+
+```kotlin
+dependencies {
+    implementation("dev.logward:logward-sdk-kotlin:0.1.0")
+}
+```
+
+### Gradle (Groovy)
+
+```groovy
+dependencies {
+    implementation 'dev.logward:logward-sdk-kotlin:0.1.0'
+}
+```
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>dev.logward</groupId>
+    <artifactId>logward-sdk-kotlin</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+## Quick Start
+
+```kotlin
+import dev.logward.sdk.LogWardClient
+import dev.logward.sdk.models.LogWardClientOptions
+
+val client = LogWardClient(
+    LogWardClientOptions(
+        apiUrl = "http://localhost:8080",
+        apiKey = "lp_your_api_key_here"
+    )
+)
+
+// Send logs
+client.info("api-gateway", "Server started", mapOf("port" to 3000))
+client.error("database", "Connection failed", RuntimeException("Timeout"))
+
+// Graceful shutdown (also automatic on JVM shutdown)
+runBlocking {
+    client.close()
+}
+```
+
+---
+
+## Configuration Options
+
+### Basic Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `apiUrl` | `String` | **required** | Base URL of your LogWard instance |
+| `apiKey` | `String` | **required** | Project API key (starts with `lp_`) |
+| `batchSize` | `Int` | `100` | Number of logs to batch before sending |
+| `flushInterval` | `Duration` | `5.seconds` | Interval to auto-flush logs |
+
+### Advanced Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxBufferSize` | `Int` | `10000` | Max logs in buffer (prevents memory leak) |
+| `maxRetries` | `Int` | `3` | Max retry attempts on failure |
+| `retryDelay` | `Duration` | `1.seconds` | Initial retry delay (exponential backoff) |
+| `circuitBreakerThreshold` | `Int` | `5` | Failures before opening circuit |
+| `circuitBreakerReset` | `Duration` | `30.seconds` | Time before retrying after circuit opens |
+| `enableMetrics` | `Boolean` | `true` | Track internal metrics |
+| `debug` | `Boolean` | `false` | Enable debug logging to console |
+| `globalMetadata` | `Map<String, Any>` | `emptyMap()` | Metadata added to all logs |
+| `autoTraceId` | `Boolean` | `false` | Auto-generate trace IDs for logs |
+
+### Example: Full Configuration
+
+```kotlin
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
+
+val client = LogWardClient(
+    LogWardClientOptions(
+        apiUrl = "http://localhost:8080",
+        apiKey = "lp_your_api_key_here",
+        
+        // Batching
+        batchSize = 100,
+        flushInterval = 5.seconds,
+        
+        // Buffer management
+        maxBufferSize = 10000,
+        
+        // Retry with exponential backoff (1s → 2s → 4s)
+        maxRetries = 3,
+        retryDelay = 1.seconds,
+        
+        // Circuit breaker
+        circuitBreakerThreshold = 5,
+        circuitBreakerReset = 30.seconds,
+        
+        // Metrics & debugging
+        enableMetrics = true,
+        debug = true,
+        
+        // Global context
+        globalMetadata = mapOf(
+            "env" to System.getenv("APP_ENV"),
+            "version" to "1.0.0",
+            "hostname" to System.getenv("HOSTNAME")
+        ),
+        
+        // Auto trace IDs
+        autoTraceId = false
+    )
+)
+```
+
+---
+
+## Logging Methods
+
+### Basic Logging
+
+```kotlin
+client.debug("service-name", "Debug message")
+client.info("service-name", "Info message", mapOf("userId" to 123))
+client.warn("service-name", "Warning message")
+client.error("service-name", "Error message", mapOf("custom" to "data"))
+client.critical("service-name", "Critical message")
+```
+
+### Error Logging with Auto-Serialization
+
+The SDK automatically serializes `Throwable` objects:
+
+```kotlin
+try {
+    throw RuntimeException("Database timeout")
+} catch (e: Exception) {
+    // Automatically serializes error with stack trace
+    client.error("database", "Query failed", e)
+}
+```
+
+Generated log metadata:
+```json
+{
+  "error": {
+    "name": "RuntimeException",
+    "message": "Database timeout",
+    "stack": "..."
+  }
+}
+```
+
+---
+
+## Trace ID Context
+
+Track requests across services with trace IDs.
+
+### Manual Trace ID
+
+```kotlin
+client.setTraceId("request-123")
+
+client.info("api", "Request received")
+client.info("database", "Querying users")
+client.info("api", "Response sent")
+
+client.setTraceId(null) // Clear context
+```
+
+### Scoped Trace ID
+
+```kotlin
+client.withTraceId("request-456") {
+    client.info("api", "Processing in context")
+    client.warn("cache", "Cache miss")
+}
+// Trace ID automatically restored after block
+```
+
+### Auto-Generated Trace ID
+
+```kotlin
+client.withNewTraceId {
+    client.info("worker", "Background job started")
+    client.info("worker", "Job completed")
+}
+```
+
+---
+
+## Query API
+
+Search and retrieve logs programmatically.
+
+### Basic Query
+
+```kotlin
+import dev.logward.sdk.models.QueryOptions
+import dev.logward.sdk.enums.LogLevel
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
+val result = client.query(
+    QueryOptions(
+        service = "api-gateway",
+        level = LogLevel.ERROR,
+        from = Instant.now().minus(24, ChronoUnit.HOURS),
+        to = Instant.now(),
+        limit = 100,
+        offset = 0
+    )
+)
+
+println("Found ${result.total} logs")
+result.logs.forEach { log ->
+    println(log)
+}
+```
+
+### Full-Text Search
+
+```kotlin
+val result = client.query(
+    QueryOptions(
+        q = "timeout",
+        limit = 50
+    )
+)
+```
+
+### Get Logs by Trace ID
+
+```kotlin
+val logs = client.getByTraceId("trace-123")
+println("Trace has ${logs.size} logs")
+```
+
+---
+
+## Live Streaming (SSE)
+
+Stream logs in real-time using Server-Sent Events.
+
+```kotlin
+val cleanup = client.stream(
+    onLog = { log ->
+        println("[${log.time}] ${log.level}: ${log.message}")
+    },
+    onError = { error ->
+        println("Stream error: ${error.message}")
+    },
+    filters = mapOf(
+        "service" to "api-gateway",
+        "level" to "error"
+    )
+)
+
+// Stop streaming when done
+Thread.sleep(60000)
+cleanup()
+```
+
+---
+
+## Metrics
+
+Track SDK performance and health.
+
+```kotlin
+val metrics = client.getMetrics()
+
+println("Logs sent: ${metrics.logsSent}")
+println("Logs dropped: ${metrics.logsDropped}")
+println("Errors: ${metrics.errors}")
+println("Retries: ${metrics.retries}")
+println("Avg latency: ${metrics.avgLatencyMs}ms")
+println("Circuit breaker trips: ${metrics.circuitBreakerTrips}")
+
+// Get circuit breaker state
+println(client.getCircuitBreakerState()) // CLOSED, OPEN, or HALF_OPEN
+
+// Reset metrics
+client.resetMetrics()
+```
+
+---
+
+## License
+
+MIT
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/logward-dev/logward-sdk-kotlin).
+
+---
+
+## Support
+
+- **Documentation**: [https://logward.dev/docs](https://logward.dev/docs)
+- **Issues**: [GitHub Issues](https://github.com/logward-dev/logward-sdk-kotlin/issues)
