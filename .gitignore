@@ -37,3 +37,6 @@ out/
 bin/
 gen/
 target/
+/gradle.properties
+/secret.gpg
+/secring.gpg
