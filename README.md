@@ -318,6 +318,129 @@ client.resetMetrics()
 
 ---
 
+## Middleware Integration
+
+LogWard provides ready-to-use middleware for popular frameworks.
+
+### Ktor Plugin
+
+Automatically log HTTP requests and responses in Ktor applications.
+
+```kotlin
+import dev.logward.sdk.middleware.LogWardPlugin
+import io.ktor.server.application.*
+
+fun Application.module() {
+    install(LogWardPlugin) {
+        apiUrl = "http://localhost:8080"
+        apiKey = "lp_your_api_key_here"
+        serviceName = "ktor-app"
+
+        // Optional configuration
+        logRequests = true
+        logResponses = true
+        logErrors = true
+        skipHealthCheck = true
+        skipPaths = setOf("/metrics", "/internal")
+
+        // Client options
+        batchSize = 100
+        flushInterval = kotlin.time.Duration.parse("5s")
+        enableMetrics = true
+        globalMetadata = mapOf("env" to "production")
+    }
+}
+```
+
+**See full example:** [examples/middleware/ktor/KtorExample.kt](examples/middleware/ktor/KtorExample.kt)
+
+### Spring Boot Interceptor
+
+Automatically log HTTP requests and responses in Spring Boot applications.
+
+```kotlin
+import dev.logward.sdk.LogWardClient
+import dev.logward.sdk.middleware.LogWardInterceptor
+import dev.logward.sdk.models.LogWardClientOptions
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+
+@Configuration
+class LogWardConfig : WebMvcConfigurer {
+
+    @Bean
+    fun logWardClient() = LogWardClient(
+        LogWardClientOptions(
+            apiUrl = "http://localhost:8080",
+            apiKey = "lp_your_api_key_here"
+        )
+    )
+
+    @Bean
+    fun logWardInterceptor(client: LogWardClient) = LogWardInterceptor(
+        client = client,
+        serviceName = "spring-boot-app",
+        logRequests = true,
+        logResponses = true,
+        skipHealthCheck = true
+    )
+
+    override fun addInterceptors(registry: InterceptorRegistry) {
+        registry.addInterceptor(logWardInterceptor(logWardClient()))
+    }
+}
+```
+
+**See full example:** [examples/middleware/spring-boot/SpringBootExample.kt](examples/middleware/spring-boot/SpringBootExample.kt)
+
+### Jakarta Servlet Filter
+
+Automatically log HTTP requests and responses in Jakarta Servlet applications (Tomcat, Jetty, etc.).
+
+```kotlin
+import dev.logward.sdk.LogWardClient
+import dev.logward.sdk.middleware.LogWardFilter
+import dev.logward.sdk.models.LogWardClientOptions
+
+// Create client
+val client = LogWardClient(
+    LogWardClientOptions(
+        apiUrl = "http://localhost:8080",
+        apiKey = "lp_your_api_key_here"
+    )
+)
+
+// Create filter
+val filter = LogWardFilter(
+    client = client,
+    serviceName = "servlet-app",
+    logRequests = true,
+    logResponses = true,
+    skipHealthCheck = true
+)
+
+// Add to servlet context
+servletContext.addFilter("logWard", filter)
+```
+
+**Or via web.xml:**
+```xml
+<filter>
+    <filter-name>LogWardFilter</filter-name>
+    <filter-class>dev.logward.sdk.middleware.LogWardFilter</filter-class>
+</filter>
+<filter-mapping>
+    <filter-name>LogWardFilter</filter-name>
+    <url-pattern>/*</url-pattern>
+</filter-mapping>
+```
+
+**See full example:** [examples/middleware/jakarta-servlet/JakartaServletExample.kt](examples/middleware/jakarta-servlet/JakartaServletExample.kt)
+
+---
+
 ## License
 
 MIT
